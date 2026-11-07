@@ -1,0 +1,17 @@
+{
+  "networkmonitor": {
+    "description": "Read device discovery data for ESP32 Network Monitor",
+    "read": {
+      "ubus": {
+        "luci-rpc": ["getHostHints", "getDHCPLeases"],
+        "network.wireless": ["status"],
+        "hostapd.*": ["get_clients"],
+        "file": ["exec"],
+        "session": ["destroy"]
+      },
+      "file": {
+        "/sbin/ip -4 neigh show": ["exec"]
+      }
+    }
+  }
+}
