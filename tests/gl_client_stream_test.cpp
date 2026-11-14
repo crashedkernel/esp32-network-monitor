@@ -12,12 +12,13 @@ int main() {
   GLClientStream r(snap);
   feed(r,
        "NM2_GLCLIENTS\n{\"mac\":\"aa:bb:cc:dd:ee:01\",\"ip\":\"192.168.1.2\",\"name\":\"My "
-       "laptop\",\"online\":true,\"connection\":\"5G\"}\n{\"mac\":\"aa:bb:cc:dd:ee:02\",\"ip\":"
+       "laptop\",\"hostname\":\"laptop.home.arpa\",\"online\":true,\"connection\":\"5G\"}\n{\"mac\":\"aa:bb:cc:dd:ee:02\",\"ip\":"
        "\"192.168.1.2\",\"name\":\"Old "
        "phone\",\"online\":false,\"connection\":\"cable\"}\n{\"mac\":\"aa:bb:cc:dd:ee:03\",\"ip\":"
        "\"\",\"name\":\"Disconnected tablet\",\"online\":false,\"connection\":\"\"}\nNM2_DONE 3\n");
   assert(r.finish() && snap.count == 3 && rows[0].online && !rows[1].online && !rows[2].online);
   assert(rows[0].ip == rows[1].ip && !rows[2].ip && !strcmp(rows[0].name, "My laptop"));
+  assert(!strcmp(rows[0].hostname, "laptop.home.arpa") && !rows[1].hostname[0]);
   assert(!strcmp(rows[0].connection, "5G"));
   // Identity follows MAC across address changes; two MACs may share a last IP.
   Device *same = snap.client("AA:BB:CC:DD:EE:01", 0xc0a80155);

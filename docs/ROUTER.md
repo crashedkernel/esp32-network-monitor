@@ -30,17 +30,19 @@ This follows the router's own tracking freshness and offline-history settings. I
 
 Use Arduino-ESP32 3.3.12, LibSSH-ESP32 5.10.0 and **Huge APP (3MB No OTA/1MB SPIFFS)**. A normal upload preserves NVS settings. Keep scan interval **60 seconds** for one-minute polls; **Scan now** requests an extra pass. The page fetches data every five seconds.
 
-SSH verifies and stores the router's key after the first successful login. Later connections verify the saved key before password authentication. The endpoint/fingerprint is visible in Admin. If the router/key/address is intentionally replaced, verify it before using **Forget saved SSH identity**. Root password changes alone do not require forgetting the key.
+SSH verifies and stores the router's key after the first successful login. Automatic and manual scans reuse the authenticated SSH connection and open a new command channel for each report. TCP keepalives help detect idle connection failures. After Wi-Fi loss or an SSH scan failure, the next scan opens a new connection and verifies the saved key before password authentication. The endpoint/fingerprint is visible in Admin. If the router/key/address is intentionally replaced, verify it before using **Forget saved SSH identity**. Root password changes alone do not require forgetting the key.
 
 Limits: **254 stored clients**, **1535 bytes per reduced record**, **2 MB transferred output**. Each report requires the completion count, EOF/close and successful command exit before publication. SSH read budget is 50 seconds; connect/auth/channel timeout is five seconds. Working/published tables are sized for the inventory and swapped atomically. Router API timeout is 20 seconds. No complete API-response String/JSON tree is held on the ESP32.
 
-## Board uptime
+## Hostnames and system uptime
 
-The dashboard adds **Board uptime** after **Last completed scan**. It uses `esp_timer_get_time()` (64-bit monotonic time since this ESP32 boot), advances every second, and works without NTP. It is not the router's uptime. A board restart resets it.
+**Hostname / DNS** shows the result of a reverse DNS lookup using the ESP32’s configured LAN DNS server. Online clients with an IPv4 address are eligible for a lookup. GL.iNet can supply its own hostname when the lookup returns no name. Offline clients can retain the last known hostname for the same device and address. The **Device name** column still shows the router’s alias or device label.
+
+**System uptime**, below **Last completed scan**, tracks the time since the ESP32 last booted. It advances every second and works without NTP.
 
 ## HTTP router requirements
 
-HTTP uses authenticated JSON-RPC at `/ubus` on port 80 by default. It is not SSH, HTTPS or the legacy `/cgi-bin/luci/rpc` endpoint. HTTP transmits the router password without transport encryption, so use a trusted LAN. Redirects are rejected. A router that redirects HTTP to HTTPS needs a suitable LAN HTTP endpoint or should use the SSH option instead.
+HTTP uses authenticated JSON-RPC at `/ubus` on port 80 by default. The monitor reuses the session token within its 180-second idle timeout and reauthenticates after the token expires or a scan fails. It is not SSH, HTTPS or the legacy `/cgi-bin/luci/rpc` endpoint. HTTP transmits the router password without transport encryption, so use a trusted LAN. Redirects are rejected. A router that redirects HTTP to HTTPS needs a suitable LAN HTTP endpoint or should use the SSH option instead.
 
 Both modes store the router password in ESP32 Preferences without flash encryption. It is never included in the public dashboard API, populated into the admin form, or printed to Serial.
 
@@ -101,7 +103,7 @@ config login
 
 The hash belongs in the router config; enter the original password in the ESP32 form. No Linux shell account is required for this rpcd-only login. Restart rpcd after installing the ACL and login, then configure that user in the ESP32. Retain an existing administrator login while testing.
 
-The `file.exec` call runs `/sbin/ip` directly with the fixed argument array `-4`, `neigh`, `show`. User-entered values are never substituted into a shell command. There are no router configuration changes or active client probes during a router scan. Login/logout manage only the monitor's own RPC session.
+The `file.exec` call runs `/sbin/ip` directly with the fixed argument array `-4`, `neigh`, `show`. User-entered values are never substituted into a shell command. There are no router configuration changes or active client probes during a router scan. The monitor keeps its RPC token in memory and reuses it while the session is active.
 
 ## What is considered online in HTTP mode
 
@@ -137,8 +139,6 @@ SSH implementation: [LibSSH-ESP32](https://github.com/ewpa/LibSSH-ESP32), versio
 
 ## Validation
 
-`glinet-ui-5` compiled for AirM2M_CORE_ESP32C3 with Huge APP: **1,340,155 bytes flash**, **41,188 bytes global RAM**. Tests cover explicit client flags, IP/MAC identity, names, missing/shared IPs, empty/truncated reports and SSH exit ordering. The Lua reducer tests exercise array/MAC-keyed API responses, aliases, Unicode, module fallbacks and traffic-history removal. Dashboard checks include live uptime and restart values.
+The current `glinet-ui-9` build was compiled for AirM2M CORE ESP32C3 with Huge APP and completed a live GL.iNet report with 115 clients. In an earlier hardware check of the same session reuse and hostname changes, eight scans completed without a new SSH login and 105 of 115 devices had hostnames.
 
-Live verification on the connected router returned **106 ONLINE / 7 OFFLINE**, **111 names / 113 clients**, from `clients.get_list`. A forced scan completed successfully and ESP32 uptime advanced independently. Admin, NTP/time settings, static assets and factory-reset guards passed. Saved credentials were retained; factory reset was not executed.
-
-The dashboard/Admin retain light/dark mode, 80–150% text size, search, status filters, configurable timezone/12–24-hour time/NTP server and confirmed factory reset. Fresh/factory-reset credentials remain setup AP **netmon123**, Admin **admin / netmonadmin123**. Current saved passwords survive uploads.
+Host checks cover the GL.iNet client parser, streamed SSH reports, legacy OpenWrt reports, the Lua reducer, and dashboard search, sorting, clocks and scan controls. The RGB firmware build was compile-tested. On the LuatOS, the activity-light endpoint rejected requests made without an Admin login.

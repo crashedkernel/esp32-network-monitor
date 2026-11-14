@@ -65,7 +65,7 @@
   function matches(v) {
     const choice = $('statusFilter').value;
     if (choice === 'online' && v.status !== 'ONLINE' || choice === 'offline' && v.status !== 'OFFLINE' || choice === 'changed' && !v.changed || choice === 'new' && !v.isNew) return false;
-    const text = [v.ip, v.name || 'Unknown', v.mac || 'Unknown', v.status, stateText(v), v.changed ? 'changed' : '', v.isNew ? 'new' : ''].join(' ').toLowerCase();
+    const text = [v.ip, v.name || 'Unknown', v.hostname || 'Unavailable', v.mac || 'Unknown', v.status, stateText(v), v.changed ? 'changed' : '', v.isNew ? 'new' : ''].join(' ').toLowerCase();
     return $('search').value.trim().toLowerCase().split(/\s+/).every(term => text.includes(term))
   }
 
@@ -89,6 +89,11 @@
       td.className = 'device-name' + (v.name ? '' : ' unknown');
       td.textContent = v.name || 'Unknown';
       td.title = v.name || 'Unknown';
+      tr.appendChild(td);
+      td = document.createElement('td');
+      td.className = 'hostname mono' + (v.hostname ? '' : ' muted');
+      td.textContent = v.hostname || 'Unavailable';
+      td.title = v.hostname || '';
       tr.appendChild(td);
       td = document.createElement('td');
       td.className = 'mono muted';
@@ -117,7 +122,7 @@
       td.textContent = stateText(v);
       tr.appendChild(td);
       tr.setAttribute('role', 'row');
-      for (const [i, label] of ['IP address', 'Device name', 'MAC address', 'Status', 'Connection'].entries()) {
+      for (const [i, label] of ['IP address', 'Device name', 'Hostname / DNS', 'MAC address', 'Status', 'Connection'].entries()) {
         tr.children[i].dataset.label = label;
         tr.children[i].setAttribute('role', 'cell')
       }
@@ -126,7 +131,7 @@
     if (!shown.length) {
       const tr = document.createElement('tr'),
         td = document.createElement('td');
-      td.colSpan = 5;
+      td.colSpan = 6;
       td.className = 'empty';
       const title = document.createElement('strong');
       title.textContent = latest.devices.length ? 'No matching devices' : 'No devices discovered yet';
@@ -147,8 +152,8 @@
       hours = Math.floor(up % 86400 / 3600),
       minutes = Math.floor(up % 3600 / 60),
       seconds = up % 60;
-    $('boardUptime').textContent = (days ? days + 'd ' : '') + [hours, minutes, seconds].map(v => String(v).padStart(2, '0')).join(':');
-    $('uptimeDetail').textContent = elapsed > 15 ? 'From the last monitor connection' : 'Since the board last restarted';
+    $('systemUptime').textContent = (days ? days + 'd ' : '') + [hours, minutes, seconds].map(v => String(v).padStart(2, '0')).join(':');
+    $('uptimeDetail').textContent = elapsed > 15 ? 'From the last monitor connection' : 'Since the system last restarted';
     if (clockBase) {
       const current = new Date((clockBase + elapsed) * 1000);
       $('currentTime').textContent = timeFormat.format(current);

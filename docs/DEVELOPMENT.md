@@ -25,6 +25,12 @@ arduino-cli compile --fqbn esp32:esp32:AirM2M_CORE_ESP32C3:PartitionScheme=huge_
 
 Python 3 is required only when modifying web assets. Regenerate assets after edits; generated gzip content has a deterministic timestamp. Keep `web/timezones.json` and `NetworkMonitor/TimeZones.h` aligned if changing timezone choices. `.clang-format` records C++ formatting preferences. Firmware behavior changes should have focused fixtures and a changelog entry.
 
+To compile the optional RGB controls, use a board variant that exposes `RGB_BUILTIN`. The generic ESP32-C3 target is used for this compile check.
+
+```sh
+arduino-cli compile --fqbn esp32:esp32:esp32c3:PartitionScheme=huge_app NetworkMonitor
+```
+
 ## Tests
 
 Browser behavior tests require Node.js (development only):
@@ -59,9 +65,10 @@ python3 -m venv /tmp/netmon-tests
 
 1. Run the host checks, regenerate assets, and compile with the pinned toolchain.
 2. Compare board settings and dependencies against README.
-3. Verify actual automatic and forced GL.iNet scans, retained reports on read errors, Admin login, time synchronization and live uptime.
-4. Verify public files contain no personal Wi-Fi/router credentials, host fingerprints, real inventories or build artifacts.
-5. Update VERSION and CHANGELOG; create a version tag after committing.
-6. Test destructive factory reset only on a disposable configuration or spare board. Do not wipe an in-use board just to validate a release.
+3. Verify scheduled and manual GL.iNet scans reuse the SSH login, errors retain the latest report, and hostnames display separately from aliases. Check Admin login, time synchronization and system uptime.
+4. Verify the Wi-Fi settings after a restart, then test the activity-light toggle and persistence. Check the color picker and actual LED color on supported RGB hardware.
+5. Verify public files contain no personal Wi-Fi/router credentials, host fingerprints, real inventories or build artifacts.
+6. Update VERSION and CHANGELOG; create a version tag after committing.
+7. Test destructive factory reset only on a disposable configuration or spare board. Do not wipe an in-use board just to validate a release.
 
-The v1.0.0 release is a source release. Build binaries locally using the documented board settings. Never publish an NVS/whole-flash backup: it can contain passwords and router trust data.
+GitHub releases contain source archives. Build binaries locally using the documented board settings. Never publish an NVS/whole-flash backup: it can contain passwords and router trust data.

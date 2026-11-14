@@ -43,10 +43,10 @@ class GLClientStream {
     }
     cJSON *row = cJSON_Parse(line);
     const cJSON *mac = owItem(row, "mac"), *ip = owItem(row, "ip"), *name = owItem(row, "name"),
-                *online = owItem(row, "online"), *connection = owItem(row, "connection");
+                *hostname = owItem(row, "hostname"), *online = owItem(row, "online"), *connection = owItem(row, "connection");
     bool valid = cJSON_IsObject(row) && cJSON_IsString(mac) && owMac(owText(mac)) &&
                  cJSON_IsString(ip) && cJSON_IsString(name) && cJSON_IsBool(online) &&
-                 cJSON_IsString(connection);
+                 cJSON_IsString(connection) && (!hostname || cJSON_IsString(hostname));
     if (!valid) {
       cJSON_Delete(row);
       return fail("Invalid GL.iNet client record or online flag");
@@ -67,6 +67,8 @@ class GLClientStream {
     d->reported = true;
     // Use the alias/name selected by GL.iNet; do not replace it with DNS guesses.
     owCopy(d->name, owText(name), sizeof(d->name));
+    if (strcmp(owText(hostname), "*"))
+      owCopy(d->hostname, owText(hostname), sizeof(d->hostname));
     owCopy(d->connection, owText(connection), sizeof(d->connection));
     records++;
     cJSON_Delete(row);

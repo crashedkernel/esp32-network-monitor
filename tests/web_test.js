@@ -54,7 +54,7 @@ class El {
 async function run() {
   const root = path.resolve(__dirname, '..'),
     els = {},
-    buttons = ['ip', 'name', 'mac', 'status', 'connection'].map(key => {
+    buttons = ['ip', 'name', 'hostname', 'mac', 'status', 'connection'].map(key => {
       let b = new El();
       b.dataset.key = key;
       b.parentElement = new El();
@@ -69,7 +69,7 @@ async function run() {
   let now = 0,
     posts = 0;
   const sample = {
-    firmware: 'glinet-ui-5',
+    firmware: 'glinet-ui-9',
     timeZone: 'America/New_York',
     timeFormat: '24',
     timeServer: 'time.nist.gov',
@@ -94,6 +94,7 @@ async function run() {
     devices: [{
       ip: '192.168.2.100',
       name: 'Living room',
+      hostname: 'tv.home.arpa',
       mac: 'AA:BB:CC:00:00:01',
       status: 'ONLINE',
       isNew: true,
@@ -101,6 +102,7 @@ async function run() {
     }, {
       ip: '192.168.2.2',
       name: 'Office printer',
+      hostname: 'printer.home.arpa',
       mac: 'AA:BB:CC:00:00:02',
       status: 'OFFLINE',
       changed: true,
@@ -159,7 +161,7 @@ async function run() {
   vm.runInContext(fs.readFileSync(path.join(root, 'web/dashboard.js'), 'utf8'), ctx);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(els.rows.children[0].children[0].textContent, '192.168.2.2');
-  assert.match(els.rows.children[0].children[3].textContent, /OFFLINEChanged/);
+  assert.match(els.rows.children[0].children[4].textContent, /OFFLINEChanged/);
   assert.equal(els.rows.children[1].children[1].textContent, '<script>unsafe</script>');
   assert.equal(els.countOffline.textContent, '1');
   assert.match(els.clockStatus.textContent, /Time synchronized/);
@@ -169,6 +171,16 @@ async function run() {
   els.search.listeners.input();
   assert.equal(els.rows.children.length, 1);
   assert.match(els.rows.children[0].textContent, /Office printer/);
+  els.search.value = 'printer.home.arpa';
+  els.search.listeners.input();
+  assert.equal(els.rows.children.length, 1);
+  assert.equal(els.rows.children[0].children[2].textContent, 'printer.home.arpa');
+  assert.equal(els.rows.children[0].children[2].dataset.label, 'Hostname / DNS');
+  els.clearSearch.listeners.click();
+  buttons[2].listeners.click();
+  assert.equal(els.rows.children[0].children[2].textContent, 'Unavailable');
+  assert.equal(els.rows.children[1].children[2].textContent, 'printer.home.arpa');
+  buttons[0].listeners.click();
   els.search.value = 'offline cable';
   els.search.listeners.input();
   assert.equal(els.rows.children.length, 1);
@@ -179,7 +191,7 @@ async function run() {
   els.search.listeners.input();
   assert.equal(els.rows.children.length, 2);
   assert.match(els.rows.children[0].textContent, /unsafe/);
-  assert.equal(els.rows.children[0].children[4].dataset.label, 'Connection');
+  assert.equal(els.rows.children[0].children[5].dataset.label, 'Connection');
   els.clearSearch.listeners.click();
   els.statusFilter.value = 'offline';
   els.statusFilter.listeners.change();
@@ -231,12 +243,12 @@ async function run() {
   sample.timeFormat = '24';
   await ticks[0]();
   assert.equal(els.currentTime.textContent, '16:00:00');
-  assert.equal(els.boardUptime.textContent, '1d 01:01:01');
+  assert.equal(els.systemUptime.textContent, '1d 01:01:01');
   const oldTime = els.currentTime.textContent;
   now = 2000;
   ticks[1]();
   assert.notEqual(els.currentTime.textContent, oldTime);
-  assert.equal(els.boardUptime.textContent, '1d 01:01:03');
+  assert.equal(els.systemUptime.textContent, '1d 01:01:03');
   await els.scanNow.listeners.click();
   assert.equal(posts, 1);
   assert.equal(els.scanNow.disabled, true);
@@ -252,7 +264,7 @@ async function run() {
   sample.lastScanEpoch = 0;
   await ticks[0]();
   assert.equal(els.currentTime.textContent, '--:--:--');
-  assert.equal(els.boardUptime.textContent, '00:00:07');
+  assert.equal(els.systemUptime.textContent, '00:00:07');
   assert.match(els.clockStatus.textContent, /Synchronizing/);
   assert.match(els.note.textContent, /GL.iNet client tracker/);
   const themeSource = fs.readFileSync(path.join(root, 'web/theme.js'), 'utf8'),
@@ -337,6 +349,7 @@ async function run() {
   store.set('nm-font-size', 'invalid');
   assert.equal(themeContext().label.textContent, '100%');
   const html = fs.readFileSync(path.join(root, 'web/index.html'), 'utf8');
+  assert(html.includes('System uptime') && html.includes('data-key="hostname"'));
   assert(!html.includes('Network visibility') && !html.includes('id="firmware"'));
   assert(!els.note.textContent.includes('does not provide device names'));
   console.log('Web checks passed: all-column search, filters, sorting, safe names, configured 12/24-hour clocks/time zones, summary links, manual scan, errors and saved themes/font sizes.');

@@ -8,7 +8,9 @@
 #include <libssh/libssh.h>
 #include <libssh_esp32.h>
 
+// The scanner task owns the connection and opens one channel per report.
 ssh_session routerSSH = nullptr;
+uint32_t routerSSHLinkGeneration = 0;
 void closeRouterSSH() {
   if (routerSSH) {
     ssh_disconnect(routerSSH);
@@ -17,6 +19,9 @@ void closeRouterSSH() {
   }
 }
 bool openRouterSSH(String &error) {
+  const uint32_t generation = wifiLinkGeneration.load();
+  if (routerSSH && routerSSHLinkGeneration == generation && ssh_is_connected(routerSSH))
+    return true;
   closeRouterSSH();
   routerSSH = ssh_new();
   if (!routerSSH) {
@@ -90,6 +95,18 @@ bool openRouterSSH(String &error) {
     }
   }
   trust.end();
+  const int fd = ssh_get_fd(routerSSH);
+  const int enabled = 1, idle = 20, interval = 5, probes = 3;
+  if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle)) ||
+      setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &interval, sizeof(interval)) ||
+      setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &probes, sizeof(probes)) ||
+      setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &enabled, sizeof(enabled))) {
+    error = "Could not configure SSH connection keepalives.";
+    closeRouterSSH();
+    return false;
+  }
+  routerSSHLinkGeneration = generation;
+  Serial.println("SSH router session authenticated.");
   return true;
 }
 int routerSSHData(ssh_session, ssh_channel, void *buffer, uint32_t length, int isStderr,
@@ -186,7 +203,8 @@ bool readRouterSSHClients(RouterSnapshot &snapshot, String &error) {
           ok = true;
         break;
       }
-      if (WiFi.status() != WL_CONNECTED) {
+      if (WiFi.status() != WL_CONNECTED ||
+          wifiLinkGeneration.load() != routerSSHLinkGeneration) {
         error = "Wi-Fi disconnected during router scan.";
         break;
       }

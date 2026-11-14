@@ -31,7 +31,7 @@ for key,c in pairs(clients) do
   if name=="" then name=text(c.hostname) end
   local iface=text(c.iface)
   if iface=="" then iface=text(c.interface) end
-  print(assert(encode({mac=mac,ip=text(c.ip),name=name,online=online,connection=iface})))
+  print(assert(encode({mac=mac,ip=text(c.ip),name=name,hostname=text(c.hostname),online=online,connection=iface})))
   count=count+1
 end
 print("NM2_DONE "..count)
