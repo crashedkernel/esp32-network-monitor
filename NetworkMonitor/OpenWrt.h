@@ -76,29 +76,37 @@ cJSON *routerCall(const String &session, const char *object, const char *method,
   }
   return data;
 }
+// The scanner owns this token. OpenWrt refreshes its idle timeout on use.
+String openWrtSession;
+uint32_t openWrtLastUse = 0;
 bool readRouterSnapshot(RouterSnapshot &snapshot, String &error) {
   if (scanSource == "glinet") {
     if (!openRouterSSH(error))
       return false;
     bool ok = readRouterSSHClients(snapshot, error);
-    closeRouterSSH();
+    if (!ok)
+      closeRouterSSH();
     return ok;
   }
-  cJSON *data = routerCall("00000000000000000000000000000000", "session", "login",
-                           "{\"username\":" + json(routerUser) +
-                               ",\"password\":" + json(routerPassword) + ",\"timeout\":180}",
-                           error);
-  if (!data)
-    return false;
-  String session = owText(owItem(data, "ubus_rpc_session"));
-  cJSON_Delete(data);
-  if (session.length() != 32) {
-    error = "OpenWrt login did not return a session.";
-    return false;
+  cJSON *data = nullptr;
+  if (openWrtSession.isEmpty() || millis() - openWrtLastUse >= 175000) {
+    data = routerCall("00000000000000000000000000000000", "session", "login",
+                      "{\"username\":" + json(routerUser) +
+                          ",\"password\":" + json(routerPassword) + ",\"timeout\":180}",
+                      error);
+    if (!data)
+      return false;
+    openWrtSession = owText(owItem(data, "ubus_rpc_session"));
+    cJSON_Delete(data);
+    if (openWrtSession.length() != 32) {
+      openWrtSession = "";
+      error = "OpenWrt login did not return a session.";
+      return false;
+    }
   }
   bool ok = false;
   do {
-    data = routerCall(session, "luci-rpc", "getHostHints", "{}", error);
+    data = routerCall(openWrtSession, "luci-rpc", "getHostHints", "{}", error);
     if (!data)
       break;
     bool valid = snapshot.hints(data);
@@ -107,7 +115,7 @@ bool readRouterSnapshot(RouterSnapshot &snapshot, String &error) {
       error = "Invalid or oversized OpenWrt host hints (maximum 254 devices).";
       break;
     }
-    data = routerCall(session, "luci-rpc", "getDHCPLeases", "{\"family\":4}", error);
+    data = routerCall(openWrtSession, "luci-rpc", "getDHCPLeases", "{\"family\":4}", error);
     if (!data)
       break;
     valid = snapshot.leases(data);
@@ -117,7 +125,7 @@ bool readRouterSnapshot(RouterSnapshot &snapshot, String &error) {
       break;
     }
     // Read only the current IPv4 neighbor table. No shell interpolation.
-    data = routerCall(session, "file", "exec",
+    data = routerCall(openWrtSession, "file", "exec",
                       "{\"command\":\"/sbin/ip\",\"params\":[\"-4\",\"neigh\",\"show\"]}", error);
     if (!data)
       break;
@@ -130,7 +138,7 @@ bool readRouterSnapshot(RouterSnapshot &snapshot, String &error) {
               "permissions.";
       break;
     }
-    data = routerCall(session, "network.wireless", "status", "{}", error);
+    data = routerCall(openWrtSession, "network.wireless", "status", "{}", error);
     if (!data)
       break;
     // Collect interface names before freeing the response to bound peak RAM.
@@ -168,7 +176,7 @@ bool readRouterSnapshot(RouterSnapshot &snapshot, String &error) {
     }
     for (unsigned i = 0; i < count; i++) {
       String object = "hostapd." + interfaces[i];
-      data = routerCall(session, object.c_str(), "get_clients", "{}", error);
+      data = routerCall(openWrtSession, object.c_str(), "get_clients", "{}", error);
       if (!data) {
         valid = false;
         break;
@@ -196,8 +204,9 @@ bool readRouterSnapshot(RouterSnapshot &snapshot, String &error) {
     if (!ok)
       error = "OpenWrt inventory exceeds 254 devices.";
   } while (false);
-  String ignored;
-  data = routerCall(session, "session", "destroy", "{}", ignored);
-  cJSON_Delete(data);
+  if (ok)
+    openWrtLastUse = millis();
+  else
+    openWrtSession = "";
   return ok;
 }

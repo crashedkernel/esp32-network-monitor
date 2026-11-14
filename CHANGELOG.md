@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Use the onboard LED for a heartbeat and scan activity, with an Admin on/off setting and a color picker on supported RGB boards.
+- Reuse authenticated GL.iNet SSH and legacy OpenWrt RPC sessions across scans. Reconnect when the session drops or expires.
+- Show searchable and sortable LAN DNS hostnames separately from device names and aliases.
+- Add station channel and 20/40 MHz channel width settings in Admin.
+- Add an authenticated restart action that keeps saved settings.
+- Stream dashboard inventory responses and reduce scanner memory use to leave more room for SSH on the ESP32-C3.
+- Label uptime and restart text with “system”.
+
 ## 1.0.0 — 2026-11-06
 
 First production release, accepted on the LuatOS CORE ESP32-C3.

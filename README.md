@@ -2,18 +2,19 @@
 
 A standalone network dashboard for the **LuatOS AirM2M CORE ESP32-C3**. Connect it to Wi-Fi, configure your router, and open the dashboard from any browser on your LAN.
 
-**Production release: v1.0.0.** The GL.iNet client API mode has been verified on a physical ESP32-C3 and router. This release preserves the verified `glinet-ui-5` firmware behavior; source formatting and documentation have been cleaned up.
+The [latest tagged release is v1.0.0](https://github.com/crashedkernel/esp32-network-monitor/releases/tag/v1.0.0). This README covers the firmware on `main`. See the [changelog](CHANGELOG.md) for updates since the release.
 
 ## Features
 
 - GL.iNet connected/disconnected client inventory, using the router's explicit online flags.
-- Device IP, alias/name, MAC address, connection type, and status changes.
+- Device IP, alias/name, hostname from LAN DNS or the router, MAC address, connection type, and status changes.
 - One-minute automatic scans by default and a **Scan now** button.
 - Search, sortable columns, clickable summary filters, and responsive phone layouts.
 - Light/dark mode and saved 80–150% text size.
-- Current time, last completed scan, and live board uptime.
+- Current time, last completed scan, and live system uptime.
 - Configurable timezone, 12/24-hour format, and NTP server; 24-hour time is the default.
-- Password-protected Admin, persistent settings, recovery hotspot, and confirmed factory reset.
+- Password-protected Admin with saved Wi-Fi channel and width, restart, and confirmed factory reset.
+- Onboard LED activity indicator with an Admin toggle and color selection on supported RGB builds.
 - Optional local ARP/ping/TCP discovery and legacy OpenWrt HTTP inventory.
 
 ## What you need
@@ -84,7 +85,7 @@ A charge-only USB cable cannot upload firmware. If no port appears, check the ca
    | Admin username | `admin` |
    | Admin password | `netmonadmin123` |
 
-4. Enter your **2.4 GHz Wi-Fi SSID/password** in Admin, choose a scan source, and save. Saving restarts the board.
+4. Enter your **2.4 GHz Wi-Fi SSID/password** in Admin, choose a scan source, and save. The system restarts after saving. Wi-Fi channel defaults to **Automatic**. If you select a channel, the ESP32 checks it first. **Channel width** offers 20 MHz or 40 MHz and defaults to 40 MHz. The 40 MHz setting uses 20 MHz when required by the access point. Admin shows the connected channel, width and signal strength.
 5. Once connected to Wi-Fi, the setup hotspot closes. Open **http://networkmonitor.local/** or the IP printed in Serial Monitor. Admin is at **/admin**.
 
 The bare hostname **http://networkmonitor/** works only if your router resolves DHCP hostnames. `.local` uses mDNS and may be blocked across guest networks/VLANs. The printed IP is always the direct fallback.
@@ -99,9 +100,11 @@ Saved credentials survive normal uploads. The defaults above apply only to fresh
 
 The router must allow SSH password authentication from the ESP32's network. The ESP32 password and router password are separate. Blank password fields preserve their saved values.
 
-This mode reads GL.iNet's **`clients.get_list`** API on router loopback through an authenticated SSH connection. It uses the API's explicit online flag, aliases and disconnected-client history. It **does not run the former SSH `ip neigh` scanner**. Clients are identified by MAC, including when DHCP addresses change. The complete GL.iNet client list is imported; subnet/range filters apply only to local/legacy sources.
+This mode reads GL.iNet's **`clients.get_list`** API on router loopback through an authenticated SSH connection reused by scheduled and manual scans. It uses the API's explicit online flag, aliases and disconnected-client history. It **does not run the former SSH `ip neigh` scanner**. Clients are identified by MAC, including when DHCP addresses change. The complete GL.iNet client list is imported; subnet/range filters apply only to local/legacy sources.
 
 Router requirements: its local GL.iNet API, `curl`, `lua` or `luajit`, and a JSON module (`cjson.safe`, `cjson` or `luci.jsonc`). These were present on the tested router; no router package changes were required. Router API errors retain the previous successful report. No fallback invents a replacement status.
+
+The dashboard’s **Hostname / DNS** column is searchable and sortable. It shows the LAN DNS reverse lookup for online devices when available, falling back to an explicit hostname supplied by GL.iNet. Offline entries can show their last known hostname.
 
 See [Router API, SSH identity, limits and legacy OpenWrt setup](docs/ROUTER.md).
 
@@ -109,12 +112,15 @@ See [Router API, SSH identity, limits and legacy OpenWrt setup](docs/ROUTER.md).
 
 - Click **Online**, **Offline**, **New**, **Status changes**, or **Tracked devices** to filter the table. Search matches all displayed columns. Click column headings to sort.
 - **Scan now** starts a fresh scan; scans do not overlap. Manual requests have a ten-second cooldown. The page fetches results every five seconds.
-- **Board uptime** ticks every second after Last completed scan. It measures this ESP32's time since boot, works without NTP and resets after restart.
+- The LuatOS onboard **D4 LED** gives a short flash every two seconds while the system is running and flashes rapidly during a scan. Short scans flash for at least three quarters of a second. Use **Admin → Activity light** to turn it on or off without restarting. Boards that expose an onboard `RGB_BUILTIN` LED also show a color picker.
+- **System uptime** ticks every second after Last completed scan. It measures this ESP32's time since boot, works without NTP and resets after restart.
 - **Date & time** in Admin selects an IANA timezone, 12/24-hour format, and NTP server. Defaults: `America/New_York`, **24 hours**, `time.nist.gov`. Options include `pool.ntp.org`, Cloudflare, Google and a custom hostname/IPv4. NTP needs DNS and outbound UDP 123. Daylight-saving conversion follows the selected timezone.
 - **Local ARP / ping / TCP** scans a subnet/range of up to 254 IPv4 addresses. It is an active discovery alternative with different status semantics. Legacy OpenWrt HTTP requires additional router API permissions described in the router guide.
 - Settings are stored in ESP32 NVS. Saving restarts the board and clears in-memory discovery history; GL.iNet's router-side disconnected-client list remains on the router.
 
 ## Factory reset and recovery
+
+**Admin → Restart system** reboots the ESP32 using the saved settings. Uptime and the in-memory device history start over when the system reconnects.
 
 In Admin, open **Factory reset**, type **RESET**, and submit. This erases the monitor's Wi-Fi/router credentials, admin password, scan/time settings, SSH identity and history. After restart, reconnect to `NetworkMonitor-Setup` using `netmon123`, then sign in as `admin / netmonadmin123`.
 
@@ -133,7 +139,8 @@ If saved Wi-Fi cannot connect for about 30 seconds, the recovery hotspot opens. 
 | `networkmonitor.local` fails | Use the printed IP; check mDNS and network isolation. |
 | SSH identity changed | Verify the router/key/address change before choosing **Forget saved SSH identity** in Admin. |
 | GL.iNet API/SSH scan fails | Verify source, router IP/port, root login, API/runtime requirements and reachability. Previous data is retained. |
-| A name is Unknown | The router API supplied neither an alias nor a hostname. Set an alias in GL.iNet's client UI. |
+| Device name is Unknown | The router API did not supply a name. You can set an alias in GL.iNet’s client page. |
+| Hostname / DNS is Unavailable | The device has no known hostname from LAN DNS or the router. An offline device can retain its last known hostname. |
 | Status differs from physical power state | The display follows GL.iNet's own tracker freshness/history. It is not a separate physical connectivity test. |
 | Clock pending | Check DNS and UDP 123; try another configured NTP server. Uptime still works. |
 
@@ -149,7 +156,7 @@ Limits: **254 stored clients**, 1535 bytes per reduced API record, 2 MB transfer
 
 See [Development and release checks](docs/DEVELOPMENT.md). End users can upload directly; generated compressed assets are already included.
 
-The production baseline was compiled with Arduino-ESP32 3.3.12 / LibSSH-ESP32 5.10.0 and verified on hardware with **106 online / 7 offline clients**, successful automatic/forced scans, authenticated Admin, synchronized time and advancing board uptime. Counts describe that acceptance session, not a fixed expected network size. Factory-reset rejection guards were tested; a destructive wipe was not performed on the configured acceptance board.
+The current LuatOS build was compiled with Arduino-ESP32 3.3.12 and LibSSH-ESP32 5.10.0. It was flashed to a LuatOS ESP32-C3 and published a live GL.iNet scan with 115 clients. The RGB build was compile-tested. See the [router guide](docs/ROUTER.md#validation) for hardware verification details.
 
 ## License
 

@@ -22,11 +22,11 @@ def reduce(response, module='cjson.safe'):
  runtime.execute('package.preload["'+module+'"]=function() return {decode=test_decode,encode=test_encode,parse=test_decode,stringify=test_encode} end')
  runtime.execute(script)
  return output
-clients=[dict(mac='aa:bb:cc:dd:ee:01',ip='192.168.1.2',name='Hostname',alias='My laptop',online=True,iface='5G',last_rx=list(range(60))),dict(mac='aa:bb:cc:dd:ee:02',ip='',alias='',name='Old phone',online=0,iface='cable')]
+clients=[dict(mac='aa:bb:cc:dd:ee:01',ip='192.168.1.2',name='Hostname',hostname='laptop.home.arpa',alias='My laptop',online=True,iface='5G',last_rx=list(range(60))),dict(mac='aa:bb:cc:dd:ee:02',ip='',alias='',name='Old phone',online=0,iface='cable')]
 lines=reduce(dict(id=1,result=dict(clients=clients)))
 assert lines[0]=='NM2_GLCLIENTS' and lines[-1]=='NM2_DONE 2'
 rows=[json.loads(line) for line in lines[1:-1]]
-assert rows[0]['name']=='My laptop' and rows[0]['online'] is True
+assert rows[0]['name']=='My laptop' and rows[0]['hostname']=='laptop.home.arpa' and rows[0]['online'] is True
 assert rows[1]['name']=='Old phone' and rows[1]['online'] is False and rows[1]['ip']==''
 assert all('last_rx' not in row for row in rows)
 # MAC-keyed objects and each supported JSON library fallback.
