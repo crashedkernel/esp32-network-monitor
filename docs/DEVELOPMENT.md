@@ -53,6 +53,8 @@ c++ -std=c++17 tests/time_settings_test.cpp -o /tmp/netmon-time
 /tmp/netmon-time
 ```
 
+The GL.iNet parser fixture exercises two consecutive 255-device inventories while retaining the published report. The OpenWrt fixture checks the device limit, allocation across blocks, and report replacement.
+
 The exact on-router Lua reducer can be tested with Python and Lupa, without a router:
 
 ```sh
@@ -66,9 +68,10 @@ python3 -m venv /tmp/netmon-tests
 1. Run the host checks, regenerate assets, and compile with the pinned toolchain.
 2. Compare board settings and dependencies against README.
 3. Verify scheduled and manual GL.iNet scans reuse the SSH login, errors retain the latest report, and hostnames display separately from aliases. Check Admin login, time synchronization and system uptime.
-4. Verify the Wi-Fi settings after a restart, then test the activity-light toggle and persistence. Check the color picker and actual LED color on supported RGB hardware.
-5. Verify public files contain no personal Wi-Fi/router credentials, host fingerprints, real inventories or build artifacts.
-6. Update VERSION and CHANGELOG; create a version tag after committing.
-7. Test destructive factory reset only on a disposable configuration or spare board. Do not wipe an in-use board just to validate a release.
+4. Run the 255-device host fixture and validate repeated scans on hardware. Record the size of the live inventory tested.
+5. Verify the Wi-Fi settings after a restart, then test the activity-light toggle and persistence. Check the color picker and actual LED color on supported RGB hardware.
+6. Verify public files contain no personal Wi-Fi/router credentials, host fingerprints, real inventories or build artifacts.
+7. Update VERSION and CHANGELOG; create a version tag after committing.
+8. Test destructive factory reset only on a disposable configuration or spare board. Do not wipe an in-use board just to validate a release.
 
 GitHub releases contain source archives. Build binaries locally using the documented board settings. Never publish an NVS/whole-flash backup: it can contain passwords and router trust data.

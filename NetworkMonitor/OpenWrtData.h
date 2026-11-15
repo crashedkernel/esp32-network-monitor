@@ -44,44 +44,31 @@ inline bool owMac(const char *s) {
 }
 inline void owCopy(char *out, const char *in, size_t n) { snprintf(out, n, "%s", in); }
 struct RouterSnapshot {
-  Device *rows;
-  unsigned count, capacity;
+  DeviceTable &rows;
   uint32_t lo, hi;
-  bool overflow = false;
-  bool canGrow = false, allocationFailed = false;
-  bool expand() {
-    if (!canGrow || capacity >= 254)
-      return false;
-    unsigned next = capacity ? capacity * 2 : 16;
-    if (next > 254)
-      next = 254;
-    Device *expanded = new (std::nothrow) Device[next];
-    if (!expanded) {
-      allocationFailed = true;
-      return false;
+  bool overflow = false, allocationFailed = false;
+  Device *add() {
+    Device *row = rows.append();
+    if (row)
+      row->isNew = true;
+    else {
+      overflow = true;
+      allocationFailed = rows.size() < MAX_HOSTS;
     }
-    memcpy(expanded, rows, count * sizeof(Device));
-    delete[] rows;
-    rows = expanded;
-    capacity = next;
-    return true;
+    return row;
   }
   Device *host(uint32_t ip, const char *mac = "", const char *name = "") {
     if (ip < lo || ip > hi)
       return nullptr;
     unsigned i = 0;
-    for (; i < count; i++)
+    for (; i < rows.size(); i++)
       if (rows[i].ip == ip)
         break;
-    if (i == count) {
-      if (count == capacity && !expand()) {
-        overflow = true;
+    if (i == rows.size()) {
+      Device *row = add();
+      if (!row)
         return nullptr;
-      }
-      rows[count] = Device();
-      rows[count].ip = ip;
-      rows[count].isNew = true;
-      count++;
+      row->ip = ip;
     }
     Device &d = rows[i];
     if (owMac(mac)) {
@@ -89,24 +76,19 @@ struct RouterSnapshot {
       for (char *p = d.mac; *p; p++)
         *p = toupper((unsigned char)*p);
     }
-    if (*name && strcmp(name, "*"))
-      owCopy(d.name, name, sizeof(d.name));
+    if (*name && strcmp(name, "*") && !d.name.set(name)) {
+      overflow = allocationFailed = true;
+      return nullptr;
+    }
     return &d;
   }
   Device *client(const char *mac, uint32_t ip) {
     unsigned i = 0;
-    for (; i < count; i++)
+    for (; i < rows.size(); i++)
       if (!strcasecmp(rows[i].mac, mac))
         break;
-    if (i == count) {
-      if (count == capacity && !expand()) {
-        overflow = true;
-        return nullptr;
-      }
-      rows[count] = Device();
-      rows[count].isNew = true;
-      count++;
-    }
+    if (i == rows.size() && !add())
+      return nullptr;
     Device &d = rows[i];
     if (ip)
       d.ip = ip;
@@ -195,7 +177,7 @@ struct RouterSnapshot {
       owCopy(mac, c->string, sizeof(mac));
       for (char *p = mac; *p; p++)
         *p = toupper((unsigned char)*p);
-      for (unsigned i = 0; i < count; i++)
+      for (unsigned i = 0; i < rows.size(); i++)
         if (!strcmp(rows[i].mac, mac))
           rows[i].online = true;
     }

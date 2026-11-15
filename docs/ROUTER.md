@@ -32,7 +32,7 @@ Use Arduino-ESP32 3.3.12, LibSSH-ESP32 5.10.0 and **Huge APP (3MB No OTA/1MB SPI
 
 SSH verifies and stores the router's key after the first successful login. Automatic and manual scans reuse the authenticated SSH connection and open a new command channel for each report. TCP keepalives help detect idle connection failures. After Wi-Fi loss or an SSH scan failure, the next scan opens a new connection and verifies the saved key before password authentication. The endpoint/fingerprint is visible in Admin. If the router/key/address is intentionally replaced, verify it before using **Forget saved SSH identity**. Root password changes alone do not require forgetting the key.
 
-Limits: **254 stored clients**, **1535 bytes per reduced record**, **2 MB transferred output**. Each report requires the completion count, EOF/close and successful command exit before publication. SSH read budget is 50 seconds; connect/auth/channel timeout is five seconds. Working/published tables are sized for the inventory and swapped atomically. Router API timeout is 20 seconds. No complete API-response String/JSON tree is held on the ESP32.
+Limits: **255 stored clients**, **1535 bytes per reduced record**, **2 MB transferred output**. Each report requires the completion count, EOF/close and successful command exit before publication. SSH read budget is 50 seconds; connect/auth/channel timeout is five seconds. Working and published reports grow in small blocks as devices are added. Names, hostnames, and connection labels use only as much storage as their text requires. Successful scans swap the reports and reuse the available blocks. Failed scans release the working blocks and retain the published report. Router API timeout is 20 seconds. No complete API-response String/JSON tree is held on the ESP32.
 
 ## Hostnames and system uptime
 
@@ -123,7 +123,7 @@ All known router candidates can appear, including offline leases/reservations ne
 
 The report is committed only after all required reads succeed. Authentication errors, SSH identity changes, missing permissions/packages, invalid responses, Wi-Fi loss, or oversized results leave the previous report and its counters unchanged and display an error. No automatic switch to local probes occurs. A fresh installation with an error keeps an empty report until the first successful scan.
 
-HTTP limits: 254 IPv4 addresses in the selected subnet/range, 254 stored rows, 16 AP interfaces and 32 KB per raw HTTP response. GL.iNet client-output limits are documented above. HTTP uses 3-second connect and 5-second read timeouts; GL.iNet SSH timeout details are above. Subnet/range filtering happens on the ESP32; it cannot reduce the size of the router's raw RPC response. A very large router inventory may exceed the applicable response limit even with a small selected range. This raw-response limitation applies to HTTP; GL.iNet mode streams reduced API records without buffering the full response.
+HTTP limits: 255 IPv4 addresses in the selected subnet/range, 255 stored rows, 16 AP interfaces and 32 KB per raw HTTP response. GL.iNet client-output limits are documented above. HTTP uses 3-second connect and 5-second read timeouts; GL.iNet SSH timeout details are above. Subnet/range filtering happens on the ESP32; it cannot reduce the size of the router's raw RPC response. A very large router inventory may exceed the applicable response limit even with a small selected range. This raw-response limitation applies to HTTP; GL.iNet mode streams reduced API records without buffering the full response.
 
 ## Verification on your router
 
@@ -139,6 +139,8 @@ SSH implementation: [LibSSH-ESP32](https://github.com/ewpa/LibSSH-ESP32), versio
 
 ## Validation
 
-The current `glinet-ui-9` build was compiled for AirM2M CORE ESP32C3 with Huge APP and completed a live GL.iNet report with 115 clients. In an earlier hardware check of the same session reuse and hostname changes, eight scans completed without a new SSH login and 105 of 115 devices had hostnames.
+The `glinet-ui-11` firmware completed three live scans with 116 devices and accepted a manual scan on the LuatOS ESP32-C3. The host fixture parsed and published two consecutive 255-device GL.iNet reports with names, hostnames, and changed statuses. The full 255-device workload has been tested in the host fixture.
+
+The `glinet-ui-9` build was compiled for AirM2M CORE ESP32C3 with Huge APP and completed a live GL.iNet report with 115 clients. In an earlier hardware check of the same session reuse and hostname changes, eight scans completed without a new SSH login and 105 of 115 devices had hostnames.
 
 Host checks cover the GL.iNet client parser, streamed SSH reports, legacy OpenWrt reports, the Lua reducer, and dashboard search, sorting, clocks and scan controls. The RGB firmware build was compile-tested. On the LuatOS, the activity-light endpoint rejected requests made without an Admin login.

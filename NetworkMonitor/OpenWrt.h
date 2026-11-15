@@ -112,7 +112,7 @@ bool readRouterSnapshot(RouterSnapshot &snapshot, String &error) {
     bool valid = snapshot.hints(data);
     cJSON_Delete(data);
     if (!valid) {
-      error = "Invalid or oversized OpenWrt host hints (maximum 254 devices).";
+      error = "Invalid or oversized OpenWrt host hints (maximum 255 devices).";
       break;
     }
     data = routerCall(openWrtSession, "luci-rpc", "getDHCPLeases", "{\"family\":4}", error);
@@ -196,17 +196,20 @@ bool readRouterSnapshot(RouterSnapshot &snapshot, String &error) {
       Device *router = snapshot.host(ip);
       if (router) {
         router->online = true;
-        if (!router->name[0])
-          owCopy(router->name, "OpenWrt router", sizeof(router->name));
+        if (router->name.empty() && !router->name.set("OpenWrt router"))
+          snapshot.overflow = snapshot.allocationFailed = true;
       }
     }
     ok = !snapshot.overflow;
     if (!ok)
-      error = "OpenWrt inventory exceeds 254 devices.";
+      error = "OpenWrt inventory exceeds 255 devices.";
   } while (false);
   if (ok)
     openWrtLastUse = millis();
-  else
+  else {
     openWrtSession = "";
+    if (snapshot.allocationFailed)
+      error = "Not enough memory to store OpenWrt devices.";
+  }
   return ok;
 }
