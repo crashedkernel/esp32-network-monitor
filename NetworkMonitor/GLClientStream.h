@@ -61,15 +61,17 @@ class GLClientStream {
     if (!d) {
       cJSON_Delete(row);
       return fail(snapshot.allocationFailed ? "Not enough memory for GL.iNet clients"
-                                            : "GL.iNet client list exceeds 254 stored devices");
+                                            : "GL.iNet client list exceeds 255 stored devices");
     }
     d->online = cJSON_IsTrue(online);
-    d->reported = true;
     // Use the alias/name selected by GL.iNet; do not replace it with DNS guesses.
-    owCopy(d->name, owText(name), sizeof(d->name));
-    if (strcmp(owText(hostname), "*"))
-      owCopy(d->hostname, owText(hostname), sizeof(d->hostname));
-    owCopy(d->connection, owText(connection), sizeof(d->connection));
+    const char *reportedHostname = owText(hostname);
+    if (!d->name.set(owText(name)) ||
+        !d->hostname.set(strcmp(reportedHostname, "*") ? reportedHostname : "") ||
+        !d->connection.set(owText(connection))) {
+      cJSON_Delete(row);
+      return fail("Not enough memory to store GL.iNet client names");
+    }
     records++;
     cJSON_Delete(row);
     return true;

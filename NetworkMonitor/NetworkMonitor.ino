@@ -1,6 +1,7 @@
 /* LuatOS ESP32-C3 network monitor. Arduino-ESP32 3.x; LibSSH-ESP32 5.10.0. */
 #include "WebAssets.h"
 #include "TimeSettings.h"
+#include "Device.h"
 #include <Arduino.h>
 #include <ESPmDNS.h>
 #include <Preferences.h>
@@ -23,7 +24,6 @@
 #include <lwip/tcpip.h>
 #include <time.h>
 
-constexpr unsigned MAX_HOSTS = 254;
 uint32_t scanIntervalSeconds = 60;
 WebServer server(80);
 Preferences prefs;
@@ -46,9 +46,8 @@ std::atomic<uint32_t> wifiLinkGeneration{0};
 String timeZone = DEFAULT_TIME_ZONE, timeFormat = "24", timeServer = DEFAULT_TIME_SERVER;
 bool apRunning = false;
 SemaphoreHandle_t lock;
-#include "Device.h"
-Device *devices = nullptr;
-unsigned deviceCount = 0, progress = 0;
+DeviceTable devices;
+unsigned progress = 0;
 std::atomic<bool> scanning{false};
 bool completed = false, scanRequested = false;
 TaskHandle_t scannerTask = nullptr;
@@ -386,6 +385,7 @@ String reverseName(uint32_t ip, IPAddress dns, uint32_t waitMs) {
 }
 #include "OpenWrt.h"
 void scanTask(void *) {
+  DeviceTable fresh;
   for (;;) {
     if (WiFi.status() != WL_CONNECTED) {
       closeRouterSSH();
@@ -399,7 +399,7 @@ void scanTask(void *) {
       hi = 0xffffffffUL;
     } else if (!bounds(mode, subnet, rangeStart, rangeEnd, lo, hi)) {
       xSemaphoreTake(lock, portMAX_DELAY);
-      scanError = "Choose a subnet or range with at most 254 addresses in Admin.";
+      scanError = "Choose a subnet or range with at most 255 addresses in Admin.";
       xSemaphoreGive(lock);
       vTaskDelay(pdMS_TO_TICKS(3000));
       continue;
@@ -411,78 +411,51 @@ void scanTask(void *) {
     progress = 0;
     scanError = "";
     xSemaphoreGive(lock);
-    // Allocate reports according to the actual inventory. Swap completed tables
-    // under the mutex so readers never see a partially built report.
-    unsigned capacity = scanSource == "glinet" ? 16 : hi - lo + 1;
-    if (scanSource != "local") {
-      xSemaphoreTake(lock, portMAX_DELAY);
-      capacity = deviceCount + 8;
-      xSemaphoreGive(lock);
-      if (capacity < 16)
-        capacity = 16;
-      if (capacity > MAX_HOSTS)
-        capacity = MAX_HOSTS;
-    }
-    Device *fresh = new (std::nothrow) Device[capacity];
-    if (!fresh) {
-      xSemaphoreTake(lock, portMAX_DELAY);
-      scanning = false;
-      scanError = "Not enough memory for a scan working table. Previous report "
-                  "retained.";
-      xSemaphoreGive(lock);
-      vTaskDelay(pdMS_TO_TICKS(3000));
-      continue;
-    }
-    unsigned count = 0;
     bool aborted = false;
+    String error;
     if (scanSource != "local") {
-      // GL.iNet supplies a complete authoritative list; do not invent offline
-      // rows for clients it has removed. Legacy OpenWrt retains prior rows.
-      xSemaphoreTake(lock, portMAX_DELAY);
-      count = scanSource == "glinet" ? 0 : deviceCount;
-      if (count)
-        memcpy(fresh, devices, count * sizeof(Device));
-      xSemaphoreGive(lock);
-      for (unsigned i = 0; i < count; i++) {
-        fresh[i].online = false;
-        fresh[i].changed = false;
-        fresh[i].isNew = false;
+      // Legacy OpenWrt retains prior rows. GL.iNet provides the whole inventory.
+      if (scanSource == "openwrt") {
+        xSemaphoreTake(lock, portMAX_DELAY);
+        for (unsigned i = 0; i < devices.size(); ++i) {
+          Device *row = fresh.append(devices[i]);
+          if (!row) {
+            aborted = true;
+            error = "Not enough memory to stage the OpenWrt report.";
+            break;
+          }
+          row->online = row->changed = row->isNew = false;
+        }
+        xSemaphoreGive(lock);
       }
-      RouterSnapshot snapshot = {fresh, count, capacity, lo, hi};
-      snapshot.canGrow = true;
-      String error;
-      aborted = !readRouterSnapshot(snapshot, error);
-      count = snapshot.count;
-      fresh = snapshot.rows;
+      RouterSnapshot snapshot = {fresh, lo, hi};
+      if (!aborted)
+        aborted = !readRouterSnapshot(snapshot, error);
       if (!aborted && (WiFi.status() != WL_CONNECTED || wifiLinkGeneration.load() != generation)) {
         aborted = true;
         error = "Wi-Fi disconnected during router query.";
       }
-      xSemaphoreTake(lock, portMAX_DELAY);
-      if (aborted)
-        scanError = error + " Previous report retained.";
-      else {
-        for (unsigned i = 0; i < count; i++) {
-          for (unsigned j = 0; j < deviceCount; j++)
+      if (!aborted) {
+        xSemaphoreTake(lock, portMAX_DELAY);
+        for (unsigned i = 0; i < fresh.size(); i++) {
+          for (unsigned j = 0; j < devices.size(); j++)
             if (scanSource == "glinet" ? !strcasecmp(fresh[i].mac, devices[j].mac)
                                        : fresh[i].ip == devices[j].ip) {
               fresh[i].isNew = false;
               if (!fresh[i].ip)
                 fresh[i].ip = devices[j].ip;
-              if (!fresh[i].hostname[0] && fresh[i].ip == devices[j].ip &&
+              if (fresh[i].hostname.empty() && fresh[i].ip == devices[j].ip &&
                   !strcasecmp(fresh[i].mac, devices[j].mac))
-                strlcpy(fresh[i].hostname, devices[j].hostname, sizeof(fresh[i].hostname));
+                fresh[i].hostname = devices[j].hostname;
               else if (scanSource == "openwrt" && strcasecmp(fresh[i].mac, devices[j].mac))
-                fresh[i].hostname[0] = 0;
+                fresh[i].hostname.clear();
               fresh[i].changed = fresh[i].online != devices[j].online;
               break;
             }
-          if (fresh[i].online)
-            fresh[i].seen = millis();
         }
-        progress = count;
+        progress = fresh.size();
+        xSemaphoreGive(lock);
       }
-      xSemaphoreGive(lock);
     } else
       for (uint32_t ip = lo; ip <= hi; ip++) {
         if (WiFi.status() != WL_CONNECTED) {
@@ -494,7 +467,7 @@ void scanTask(void *) {
         bool online = self || probeArp(ip, freshMac) || ping(ip) || probeTcp(ip);
         xSemaphoreTake(lock, portMAX_DELAY);
         int old = -1;
-        for (unsigned j = 0; j < deviceCount; j++)
+        for (unsigned j = 0; j < devices.size(); j++)
           if (devices[j].ip == ip) {
             old = j;
             break;
@@ -509,21 +482,28 @@ void scanTask(void *) {
           d.isNew = old < 0;
           d.online = online;
           if (online) {
-            d.seen = millis();
             if (self) {
-              strlcpy(d.name, "networkmonitor", sizeof(d.name));
+              if (!d.name.set("networkmonitor")) {
+                aborted = true;
+                error = "Not enough memory to store the local device name.";
+                break;
+              }
               strlcpy(d.mac, WiFi.macAddress().c_str(), sizeof(d.mac));
             } else {
               if (freshMac[0]) {
                 if (strcasecmp(d.mac, freshMac)) {
-                  d.name[0] = 0;
-                  d.hostname[0] = 0;
+                  d.name.clear();
+                  d.hostname.clear();
                 }
                 strlcpy(d.mac, freshMac, sizeof(d.mac));
               }
             }
           }
-          fresh[count++] = d;
+          if (!fresh.append(d)) {
+            aborted = true;
+            error = "Not enough memory to stage the local scan.";
+            break;
+          }
         }
         xSemaphoreTake(lock, portMAX_DELAY);
         progress++;
@@ -533,7 +513,7 @@ void scanTask(void *) {
     if (!aborted) {
       const IPAddress dns = WiFi.dnsIP();
       const uint32_t localIP = number(WiFi.localIP());
-      for (unsigned i = 0; i < count; ++i) {
+      for (unsigned i = 0; i < fresh.size(); ++i) {
         if (WiFi.status() != WL_CONNECTED || wifiLinkGeneration.load() != generation) {
           aborted = true;
           break;
@@ -541,39 +521,36 @@ void scanTask(void *) {
         auto &d = fresh[i];
         if (!d.ip || !d.online)
           continue;
-        if (d.ip == localIP) {
-          strlcpy(d.hostname, "networkmonitor.local", sizeof(d.hostname));
-        } else {
-          String hostname = reverseName(d.ip, dns, 45);
-          if (hostname.length())
-            strlcpy(d.hostname, hostname.c_str(), sizeof(d.hostname));
+        const String hostname = d.ip == localIP ? String("networkmonitor.local")
+                                                : reverseName(d.ip, dns, 45);
+        if (hostname.length() && !d.hostname.set(hostname.c_str())) {
+          aborted = true;
+          error = "Not enough memory to store device hostnames.";
+          break;
         }
-        if (scanSource == "local" && d.hostname[0] && d.ip != localIP)
-          strlcpy(d.name, d.hostname, sizeof(d.name));
+        if (scanSource == "local" && !d.hostname.empty() && d.ip != localIP)
+          d.name = d.hostname;
       }
     }
-    Device *oldReport = nullptr;
     xSemaphoreTake(lock, portMAX_DELAY);
     if (!aborted && (WiFi.status() != WL_CONNECTED || wifiLinkGeneration.load() != generation))
       aborted = true;
     if (!aborted) {
-      oldReport = devices;
-      devices = fresh;
-      fresh = nullptr;
-      deviceCount = count;
+      devices.swap(fresh);
       lastScan = millis();
       lastScanEpoch = utcNow();
       scanNumber++;
       completed = true;
-    } else if (scanError.isEmpty())
-      scanError = "Wi-Fi disconnected. Previous report retained.";
+    } else
+      scanError = (error.isEmpty() ? String("Wi-Fi disconnected.") : error) +
+                  " Previous report retained.";
+    const unsigned publishedCount = devices.size();
     scanning = false;
     xSemaphoreGive(lock);
-    delete[] oldReport;
-    delete[] fresh;
+    fresh.clear(aborted ? 0 : publishedCount);
     if (!aborted && scanSource == "glinet")
       Serial.printf("Router scan complete: %u clients, %u bytes of scanner stack free at low water.\n",
-                    count, unsigned(uxTaskGetStackHighWaterMark(nullptr)));
+                    publishedCount, unsigned(uxTaskGetStackHighWaterMark(nullptr)));
     uint32_t elapsed = millis() - began;
     uint32_t interval = scanIntervalSeconds * 1000UL;
     const uint32_t wait = elapsed < interval ? interval - elapsed : 250;
@@ -642,7 +619,7 @@ void api() {
     return;
   }
   unsigned onlineCount = 0, offlineCount = 0, newCount = 0, changedCount = 0;
-  for (unsigned i = 0; i < deviceCount; i++) {
+  for (unsigned i = 0; i < devices.size(); i++) {
     if (devices[i].online)
       onlineCount++;
     else
@@ -656,7 +633,7 @@ void api() {
   uint64_t scanned = lastScanEpoch;
   if (completed && !scanned && now)
     scanned = now - (millis() - lastScan) / 1000;
-  out += "{\"firmware\":\"glinet-ui-9\",\"nowEpoch\":" + String(now) +
+  out += "{\"firmware\":\"glinet-ui-11\",\"nowEpoch\":" + String(now) +
          ",\"uptimeSeconds\":" + String(uint64_t(esp_timer_get_time()) / 1000000ULL) +
          ",\"timeZone\":" + json(timeZone) + ",\"timeFormat\":" + json(timeFormat) +
          ",\"timeServer\":" + json(timeServer) + ",\"scanNumber\":" + String(scanNumber) +
@@ -678,15 +655,15 @@ void api() {
   server.setContentLength(CONTENT_LENGTH_UNKNOWN);
   server.send(200, "application/json", "");
   server.sendContent(out);
-  for (unsigned i = 0; i < deviceCount && server.client().connected(); i++) {
+  for (unsigned i = 0; i < devices.size() && server.client().connected(); i++) {
     out = i ? "," : "";
     const auto &d = devices[i];
     out += "{\"ip\":" + json(d.ip ? address(d.ip).toString() : String("")) +
-           ",\"name\":" + json(d.name) + ",\"hostname\":" + json(d.hostname) +
+           ",\"name\":" + json(d.name.c_str()) + ",\"hostname\":" + json(d.hostname.c_str()) +
            ",\"mac\":" + json(d.mac) +
            ",\"status\":" + json(d.online ? "ONLINE" : "OFFLINE") +
            ",\"changed\":" + (d.changed ? "true" : "false") +
-           ",\"isNew\":" + (d.isNew ? "true" : "false") + ",\"connection\":" + json(d.connection) +
+           ",\"isNew\":" + (d.isNew ? "true" : "false") + ",\"connection\":" + json(d.connection.c_str()) +
            "}";
     server.sendContent(out);
   }
@@ -913,7 +890,7 @@ void admin() {
        field("Subnet (CIDR), for example 192.168.2.0/24", "subnet", subnet) +
        "</div><div class='form-grid' id='rangeFields'>" +
        field("First IP address", "start", rangeStart) + field("Last IP address", "end", rangeEnd) +
-       "</div><p class='helper'>Up to 254 addresses per range. Use 60 seconds "
+       "</div><p class='helper'>Up to 255 addresses per range. Use 60 seconds "
        "for one-minute updates. GL.iNet mode imports the complete router client list; subnet/range "
        "filters apply only to other sources. The dashboard's Scan now button requests an "
        "additional scan.</p></section><section class='card settings-card' "
@@ -1068,7 +1045,7 @@ void save() {
     server.send(400, "text/plain",
                 "Invalid settings. Check SSID, password lengths, confirmation, "
                 "scan interval (10 to 86400 seconds), and scan range (maximum "
-                "254 IPs; CIDR /24 through /30).");
+                "255 IPs; CIDR /24 through /30).");
     return;
   }
   if (prefs.putUChar("wifiChannel", channel) != sizeof(uint8_t) ||
@@ -1109,7 +1086,7 @@ void save() {
   restartAt = millis() + 1500;
 }
 void printConnectionInfo() {
-  Serial.println("\nNetwork Monitor (glinet-ui-9) | Serial: 115200 baud | "
+  Serial.println("\nNetwork Monitor (glinet-ui-11) | Serial: 115200 baud | "
                  "send ? to repeat");
   Serial.printf("Admin username: admin\nAdmin password: %s\nSetup Wi-Fi password: %s\n",
                 adminPassword.c_str(), setupPassword.c_str());
@@ -1136,7 +1113,7 @@ void setupAP() {
 void setup() {
   Serial.begin(115200);
   delay(1000);
-  Serial.printf("\nNetwork Monitor (glinet-ui-9) starting; reset reason: %d\n",
+  Serial.printf("\nNetwork Monitor (glinet-ui-11) starting; reset reason: %d\n",
                 int(esp_reset_reason()));
   prefs.begin("netmonitor", false);
   if (prefs.getBool("resetPending", false)) {

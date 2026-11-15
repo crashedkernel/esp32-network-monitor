@@ -11,8 +11,8 @@ void output(RouterSSHReport &r, const std::string &s) {
   }
 }
 int main() {
-  Device rows[4];
-  RouterSnapshot snapshot = {rows, 0, 4, 0xc0a80101, 0xc0a801fe};
+  DeviceTable rows;
+  RouterSnapshot snapshot = {rows, 0xc0a80101, 0xc0a801fe};
   RouterSSHReport good(snapshot);
   output(good, R"(NM2_GLCLIENTS
 {"mac":"aa:bb:cc:dd:ee:01","ip":"192.168.1.2","name":"laptop","online":true,"connection":"5G"}
@@ -56,7 +56,7 @@ NM2_DONE 1
   large.eof = true;
   large.exitReceived = true;
   large.exitStatus = 0;
-  assert(large.valid() && snapshot.count == 2 && !strcmp(snapshot.rows[1].name, "named-offline") &&
+  assert(large.valid() && snapshot.rows.size() == 2 && !strcmp(snapshot.rows[1].name.c_str(), "named-offline") &&
          !snapshot.rows[1].online);
   assert(large.bytes > 32768);
   RouterSSHReport bounded(snapshot);

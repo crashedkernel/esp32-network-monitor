@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix scan-table allocation failures caused by fragmented heap by growing and reusing small blocks.
+- Support up to 255 devices and allocate names, hostnames, and connection labels according to their actual length.
 - Use the onboard LED for a heartbeat and scan activity, with an Admin on/off setting and a color picker on supported RGB boards.
 - Reuse authenticated GL.iNet SSH and legacy OpenWrt RPC sessions across scans. Reconnect when the session drops or expires.
 - Show searchable and sortable LAN DNS hostnames separately from device names and aliases.

@@ -115,7 +115,7 @@ See [Router API, SSH identity, limits and legacy OpenWrt setup](docs/ROUTER.md).
 - The LuatOS onboard **D4 LED** gives a short flash every two seconds while the system is running and flashes rapidly during a scan. Short scans flash for at least three quarters of a second. Use **Admin → Activity light** to turn it on or off without restarting. Boards that expose an onboard `RGB_BUILTIN` LED also show a color picker.
 - **System uptime** ticks every second after Last completed scan. It measures this ESP32's time since boot, works without NTP and resets after restart.
 - **Date & time** in Admin selects an IANA timezone, 12/24-hour format, and NTP server. Defaults: `America/New_York`, **24 hours**, `time.nist.gov`. Options include `pool.ntp.org`, Cloudflare, Google and a custom hostname/IPv4. NTP needs DNS and outbound UDP 123. Daylight-saving conversion follows the selected timezone.
-- **Local ARP / ping / TCP** scans a subnet/range of up to 254 IPv4 addresses. It is an active discovery alternative with different status semantics. Legacy OpenWrt HTTP requires additional router API permissions described in the router guide.
+- **Local ARP / ping / TCP** scans a subnet/range of up to 255 IPv4 addresses. A standard /24 has 254 usable host addresses. It is an active discovery alternative with different status semantics. Legacy OpenWrt HTTP requires additional router API permissions described in the router guide.
 - Settings are stored in ESP32 NVS. Saving restarts the board and clears in-memory discovery history; GL.iNet's router-side disconnected-client list remains on the router.
 
 ## Factory reset and recovery
@@ -142,6 +142,7 @@ If saved Wi-Fi cannot connect for about 30 seconds, the recovery hotspot opens. 
 | Device name is Unknown | The router API did not supply a name. You can set an alias in GL.iNet’s client page. |
 | Hostname / DNS is Unavailable | The device has no known hostname from LAN DNS or the router. An offline device can retain its last known hostname. |
 | Status differs from physical power state | The display follows GL.iNet's own tracker freshness/history. It is not a separate physical connectivity test. |
+| Scan working table runs out of memory | Update to the current firmware on `main`. It allocates the inventory in small blocks and keeps the last successful report if a scan fails. |
 | Clock pending | Check DNS and UDP 123; try another configured NTP server. Uptime still works. |
 
 ## Security and operating limits
@@ -150,13 +151,13 @@ Use on a trusted LAN. The ESP32 dashboard is public to reachable LAN clients; Ad
 
 The router connection uses SSH and a saved host-key fingerprint (trust on first successful login). The loopback API request accepts the router's self-signed HTTPS certificate inside that authenticated SSH connection. The request is read-only; router configuration/client records are not modified.
 
-Limits: **254 stored clients**, 1535 bytes per reduced API record, 2 MB transferred report, GL.iNet API timeout 20 seconds, SSH read budget 50 seconds. There is no OTA update feature. First-scan devices count as new. Empty or removed GL.iNet entries follow the authoritative router list. Read failures retain the last report.
+Limits: **255 stored clients**, 1535 bytes per reduced API record, 2 MB transferred report, GL.iNet API timeout 20 seconds, SSH read budget 50 seconds. There is no OTA update feature. First-scan devices count as new. Empty or removed GL.iNet entries follow the authoritative router list. Read failures retain the last report.
 
 ## Development and validation
 
 See [Development and release checks](docs/DEVELOPMENT.md). End users can upload directly; generated compressed assets are already included.
 
-The current LuatOS build was compiled with Arduino-ESP32 3.3.12 and LibSSH-ESP32 5.10.0. It was flashed to a LuatOS ESP32-C3 and published a live GL.iNet scan with 115 clients. The RGB build was compile-tested. See the [router guide](docs/ROUTER.md#validation) for hardware verification details.
+The current LuatOS build was compiled with Arduino-ESP32 3.3.12 and LibSSH-ESP32 5.10.0. The `glinet-ui-11` build completed three live GL.iNet scans with 116 devices. Host fixtures exercised two consecutive 255-device reports. The RGB build was compile-tested. See the [router guide](docs/ROUTER.md#validation) for hardware verification details.
 
 ## License
 
